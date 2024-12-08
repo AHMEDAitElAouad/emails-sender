@@ -155,29 +155,30 @@ async function sendEmail(recipient, subject, body, inReplyTo = null, references 
     const mailOptions = {
         from: '"Ahmed Ait el aouad" <ahmed.ait.el.aouad@alcaotar.com>',
         to: recipient,
-        subject: subject,
+        subject: inReplyTo ? `Re: ${subject}` : subject, // Add "Re:" prefix for replies
         html: body,
     };
 
+    // Add threading headers if this is a reply
     if (inReplyTo) mailOptions.inReplyTo = inReplyTo;
     if (references) mailOptions.references = references;
 
     try {
         const info = await transporter.sendMail(mailOptions);
         console.log(`Email sent to ${recipient}: ${info.messageId}`);
-        return info.messageId; // Return `Message-ID`
+        return info.messageId; // Return `Message-ID` for threading
     } catch (error) {
         console.error("Error sending email:", error);
         return null; // Return null if failed
     }
 }
 
+
 // Cron job for sending emails based on the schedule
 cron.schedule("* * * * *", async () => {
     const now = new Date();
     const currentDay = now.toLocaleString("en-US", { weekday: "long" });
     const currentHour = now.toTimeString().split(":")[0] + ":00";
-    console.log(currentDay, currentHour);
 
     try {
         const prospects = await db.collection("email_sequences").find().toArray();
@@ -185,7 +186,6 @@ cron.schedule("* * * * *", async () => {
         for (const prospect of prospects) {
             const sequence = prospect.sequence;
 
-            // Identify which emails to send
             const emailsToSend = Object.entries(sequence)
                 .filter(([key, email]) => {
                     if (!email.time || !email.time.day || !email.time.hour) {
@@ -201,10 +201,10 @@ cron.schedule("* * * * *", async () => {
                 .sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
 
             for (const [emailKey, emailDetails] of emailsToSend) {
-                // Determine `In-Reply-To` and `References`
                 let inReplyTo = null;
                 let references = null;
 
+                // For replies, use the first email's `Message-ID`
                 if (emailKey !== "email_1" && sequence.email_1.messageId) {
                     inReplyTo = sequence.email_1.messageId;
                     references = sequence.email_1.messageId;
@@ -230,7 +230,7 @@ cron.schedule("* * * * *", async () => {
                 }
             }
 
-            // Update the database with the new `sent` statuses
+            // Update the database
             await db.collection("email_sequences").updateOne(
                 { _id: prospect._id },
                 { $set: { sequence } }
@@ -240,6 +240,7 @@ cron.schedule("* * * * *", async () => {
         console.error("Error in cron job:", error);
     }
 });
+
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
