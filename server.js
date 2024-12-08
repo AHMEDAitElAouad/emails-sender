@@ -116,7 +116,6 @@
 //     await connectToDb();
 //     console.log(`Server running on port ${PORT}`);
 // });
-
 const express = require("express");
 const { MongoClient } = require("mongodb");
 const nodemailer = require("nodemailer");
@@ -150,13 +149,17 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-// Send email function with support for threading
-async function sendEmail(recipient, subject, body, inReplyTo = null, references = null) {
+async function sendEmail(recipient, subject, body, inReplyTo = null, references = null, originalBody = null) {
+    // Construct the reply body if it's a reply
+    const replyBody = inReplyTo
+        ? `${body}<br/><br/><hr style="border:none;border-top:1px solid #ccc"/><p style="color:gray;">On ${new Date().toLocaleString()}, Ahmed Ait el aouad <ahmed.ait.el.aouad@alcaotar.com> wrote:<br/>${originalBody}</p>`
+        : body;
+
     const mailOptions = {
         from: '"Ahmed Ait el aouad" <ahmed.ait.el.aouad@alcaotar.com>',
         to: recipient,
-        subject: inReplyTo ? `Re: ${subject}` : subject, // Add "Re:" prefix for replies
-        html: body,
+        subject: inReplyTo ? `Re: ${subject}` : subject,
+        html: replyBody,
     };
 
     // Add threading headers if this is a reply
@@ -173,12 +176,11 @@ async function sendEmail(recipient, subject, body, inReplyTo = null, references 
     }
 }
 
-
-// Cron job for sending emails based on the schedule
 cron.schedule("* * * * *", async () => {
     const now = new Date();
     const currentDay = now.toLocaleString("en-US", { weekday: "long" });
     const currentHour = now.toTimeString().split(":")[0] + ":00";
+    console.log(currentDay, currentHour);
 
     try {
         const prospects = await db.collection("email_sequences").find().toArray();
@@ -189,7 +191,7 @@ cron.schedule("* * * * *", async () => {
             const emailsToSend = Object.entries(sequence)
                 .filter(([key, email]) => {
                     if (!email.time || !email.time.day || !email.time.hour) {
-                        console.warn(`Invalid time data for ${key} in ${prospect.email}`);
+                        console.warn(`Invalid time data for email ${key} in prospect ${prospect.email}`);
                         return false;
                     }
                     return (
@@ -203,11 +205,13 @@ cron.schedule("* * * * *", async () => {
             for (const [emailKey, emailDetails] of emailsToSend) {
                 let inReplyTo = null;
                 let references = null;
+                let originalBody = null;
 
-                // For replies, use the first email's `Message-ID`
+                // For replies, use the first email's `Message-ID` and fetch the original body
                 if (emailKey !== "email_1" && sequence.email_1.messageId) {
                     inReplyTo = sequence.email_1.messageId;
                     references = sequence.email_1.messageId;
+                    originalBody = sequence.email_1.body; // Fetch the original email's body
                 }
 
                 // Send email
@@ -217,7 +221,8 @@ cron.schedule("* * * * *", async () => {
                     emailDetails.subject,
                     emailDetails.body,
                     inReplyTo,
-                    references
+                    references,
+                    originalBody
                 );
 
                 if (messageId) {
@@ -230,7 +235,7 @@ cron.schedule("* * * * *", async () => {
                 }
             }
 
-            // Update the database
+            // Update the database with the new `sent` statuses
             await db.collection("email_sequences").updateOne(
                 { _id: prospect._id },
                 { $set: { sequence } }
@@ -240,7 +245,6 @@ cron.schedule("* * * * *", async () => {
         console.error("Error in cron job:", error);
     }
 });
-
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
