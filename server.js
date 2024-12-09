@@ -203,48 +203,81 @@ cron.schedule("* * * * *", async () => {
                 .sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
 
             for (const [emailKey, emailDetails] of emailsToSend) {
-                let inReplyTo = null;
-                let references = null;
-                let originalBody = null;
+                try {
+                    let inReplyTo = null;
+                    let references = null;
+                    let originalBody = null;
 
-                // For replies, use the first email's `Message-ID` and fetch the original body
-                if (emailKey !== "email_1" && sequence.email_1.messageId) {
-                    inReplyTo = sequence.email_1.messageId;
-                    references = sequence.email_1.messageId;
-                    originalBody = sequence.email_1.body; // Fetch the original email's body
-                }
-
-                // Send email
-                console.log(`Sending ${emailKey} to ${prospect.email}`);
-                const messageId = await sendEmail(
-                    prospect.email,
-                    emailDetails.subject,
-                    emailDetails.body,
-                    inReplyTo,
-                    references,
-                    originalBody
-                );
-
-                if (messageId) {
-                    emailDetails.sent = true;
-                    if (emailKey === "email_1") {
-                        emailDetails.messageId = messageId; // Store `Message-ID` for the first email
+                    // For replies, use the first email's `Message-ID` and fetch the original body
+                    if (emailKey !== "email_1" && sequence.email_1.messageId) {
+                        inReplyTo = sequence.email_1.messageId;
+                        references = sequence.email_1.messageId;
+                        originalBody = sequence.email_1.body; // Fetch the original email's body
                     }
-                } else {
-                    console.error(`Failed to send ${emailKey} to ${prospect.email}`);
+
+                    // Send email
+                    console.log(`Sending ${emailKey} to ${prospect.email}`);
+                    const messageId = await sendEmail(
+                        prospect.email,
+                        emailDetails.subject,
+                        emailDetails.body,
+                        inReplyTo,
+                        references,
+                        originalBody
+                    );
+
+                    if (messageId) {
+                        emailDetails.sent = true;
+                        if (emailKey === "email_1") {
+                            emailDetails.messageId = messageId; // Store `Message-ID` for the first email
+                        }
+                    } else {
+                        throw new Error(`Failed to send ${emailKey} to ${prospect.email}`);
+                    }
+                } catch (error) {
+                    console.error(`Error sending ${emailKey} for ${prospect.email}:`, error);
+
+                    // Log the error to the "status" collection
+                    await db.collection("status").insertOne({
+                        timestamp: new Date(),
+                        type: "email_send_error",
+                        prospectEmail: prospect.email,
+                        emailKey,
+                        error: error.message,
+                    });
                 }
             }
 
-            // Update the database with the new `sent` statuses
-            await db.collection("email_sequences").updateOne(
-                { _id: prospect._id },
-                { $set: { sequence } }
-            );
+            try {
+                // Update the database with the new `sent` statuses
+                await db.collection("email_sequences").updateOne(
+                    { _id: prospect._id },
+                    { $set: { sequence } }
+                );
+            } catch (error) {
+                console.error(`Error updating database for ${prospect.email}:`, error);
+
+                // Log the error to the "status" collection
+                await db.collection("status").insertOne({
+                    timestamp: new Date(),
+                    type: "database_update_error",
+                    prospectEmail: prospect.email,
+                    error: error.message,
+                });
+            }
         }
     } catch (error) {
         console.error("Error in cron job:", error);
+
+        // Log the general cron job error to the "status" collection
+        await db.collection("status").insertOne({
+            timestamp: new Date(),
+            type: "cron_job_error",
+            error: error.message,
+        });
     }
 });
+
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
