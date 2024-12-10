@@ -152,7 +152,7 @@ const transporter = nodemailer.createTransport({
 async function sendEmail(recipient, subject, body, inReplyTo = null, references = null, originalBody = null) {
     // Construct the reply body if it's a reply
     const replyBody = inReplyTo
-        ? `${body}<br/><br/><hr style="border:none;border-top:1px solid #ccc"/><p style="color:gray;">On ${new Date().toLocaleString()}, Ahmed Ait el aouad <ahmed.ait.el.aouad@alcaotar.com> wrote:<br/>${originalBody}</p>`
+        ? `${body}<br/><br/><hr style="border:none;border-top:1px solid #ccc"/><p style="color:white;"> --- On ${new Date().toLocaleString()}, Ahmed Ait el aouad <ahmed.ait.el.aouad@alcaotar.com> wrote ---<br/>${originalBody}</p>`
         : body;
 
     const mailOptions = {
@@ -209,10 +209,10 @@ cron.schedule("* * * * *", async () => {
                     let originalBody = null;
 
                     // For replies, use the first email's `Message-ID` and fetch the original body
-                    if (emailKey !== "email_1" && sequence.email_1.messageId) {
-                        inReplyTo = sequence.email_1.messageId;
-                        references = sequence.email_1.messageId;
-                        originalBody = sequence.email_1.body; // Fetch the original email's body
+                    if (emailKey !== "1_email" && sequence["1_email"].messageId) {
+                        inReplyTo = sequence["1_email"].messageId;
+                        references = sequence["1_email"].messageId;
+                        originalBody = sequence["1_email"].body; // Fetch the original email's body
                     }
 
                     // Send email
@@ -228,7 +228,7 @@ cron.schedule("* * * * *", async () => {
 
                     if (messageId) {
                         emailDetails.sent = true;
-                        if (emailKey === "email_1") {
+                        if (emailKey === "1_email") {
                             emailDetails.messageId = messageId; // Store `Message-ID` for the first email
                         }
                     } else {
