@@ -149,6 +149,11 @@ const transporter = nodemailer.createTransport({
     },
 });
 
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+
 async function sendEmail(recipient, subject, body, inReplyTo = null, references = null, originalBody = null) {
     // Construct the reply body if it's a reply
     const replyBody = inReplyTo
@@ -202,51 +207,56 @@ cron.schedule("* * * * *", async () => {
                 })
                 .sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
 
-            for (const [emailKey, emailDetails] of emailsToSend) {
-                try {
-                    let inReplyTo = null;
-                    let references = null;
-                    let originalBody = null;
-
-                    // For replies, use the first email's `Message-ID` and fetch the original body
-                    if (emailKey !== "1_email" && sequence["1_email"].messageId) {
-                        inReplyTo = sequence["1_email"].messageId;
-                        references = sequence["1_email"].messageId;
-                        originalBody = sequence["1_email"].body; // Fetch the original email's body
-                    }
-
-                    // Send email
-                    console.log(`Sending ${emailKey} to ${prospect.email}`);
-                    const messageId = await sendEmail(
-                        prospect.email,
-                        emailDetails.subject,
-                        emailDetails.body,
-                        inReplyTo,
-                        references,
-                        originalBody
-                    );
-
-                    if (messageId) {
-                        emailDetails.sent = true;
-                        if (emailKey === "1_email") {
-                            emailDetails.messageId = messageId; // Store `Message-ID` for the first email
+                for (const [emailKey, emailDetails] of emailsToSend) {
+                    try {
+                        let inReplyTo = null;
+                        let references = null;
+                        let originalBody = null;
+                
+                        // For replies, use the first email's `Message-ID` and fetch the original body
+                        if (emailKey !== "1_email" && sequence["1_email"].messageId) {
+                            inReplyTo = sequence["1_email"].messageId;
+                            references = sequence["1_email"].messageId;
+                            originalBody = sequence["1_email"].body; // Fetch the original email's body
                         }
-                    } else {
-                        throw new Error(`Failed to send ${emailKey} to ${prospect.email}`);
+                
+                        // Send email
+                        console.log(`Sending ${emailKey} to ${prospect.email}`);
+                        const messageId = await sendEmail(
+                            prospect.email,
+                            emailDetails.subject,
+                            emailDetails.body,
+                            inReplyTo,
+                            references,
+                            originalBody
+                        );
+                
+                        if (messageId) {
+                            emailDetails.sent = true;
+                            if (emailKey === "1_email") {
+                                emailDetails.messageId = messageId; // Store `Message-ID` for the first email
+                            }
+                        } else {
+                            throw new Error(`Failed to send ${emailKey} to ${prospect.email}`);
+                        }
+                
+                        // Add a 0.5-minute (30 seconds) delay before sending the next email
+                        await delay(30000);
+                
+                    } catch (error) {
+                        console.error(`Error sending ${emailKey} for ${prospect.email}:`, error);
+                
+                        // Log the error to the "status" collection
+                        await db.collection("status").insertOne({
+                            timestamp: new Date(),
+                            type: "email_send_error",
+                            prospectEmail: prospect.email,
+                            emailKey,
+                            error: error.message,
+                        });
                     }
-                } catch (error) {
-                    console.error(`Error sending ${emailKey} for ${prospect.email}:`, error);
-
-                    // Log the error to the "status" collection
-                    await db.collection("status").insertOne({
-                        timestamp: new Date(),
-                        type: "email_send_error",
-                        prospectEmail: prospect.email,
-                        emailKey,
-                        error: error.message,
-                    });
                 }
-            }
+                
 
             try {
                 // Update the database with the new `sent` statuses
