@@ -149,11 +149,6 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-
 async function sendEmail(recipient, subject, body, inReplyTo = null, references = null, originalBody = null) {
     // Construct the reply body if it's a reply
     const replyBody = inReplyTo
@@ -192,7 +187,7 @@ cron.schedule("* * * * *", async () => {
 
         for (const prospect of prospects) {
             const sequence = prospect.sequence;
-        
+
             const emailsToSend = Object.entries(sequence)
                 .filter(([key, email]) => {
                     if (!email.time || !email.time.day || !email.time.hour) {
@@ -202,25 +197,25 @@ cron.schedule("* * * * *", async () => {
                     return (
                         email.time.day === currentDay &&
                         email.time.hour === currentHour &&
-                        !email.sent // Only consider emails that are not sent
+                        !email.sent
                     );
                 })
                 .sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
-        
+
             for (const [emailKey, emailDetails] of emailsToSend) {
                 try {
                     let inReplyTo = null;
                     let references = null;
                     let originalBody = null;
-        
+
                     // For replies, use the first email's `Message-ID` and fetch the original body
                     if (emailKey !== "1_email" && sequence["1_email"].messageId) {
                         inReplyTo = sequence["1_email"].messageId;
                         references = sequence["1_email"].messageId;
                         originalBody = sequence["1_email"].body; // Fetch the original email's body
                     }
-        
-                    // Send the email
+
+                    // Send email
                     console.log(`Sending ${emailKey} to ${prospect.email}`);
                     const messageId = await sendEmail(
                         prospect.email,
@@ -230,29 +225,18 @@ cron.schedule("* * * * *", async () => {
                         references,
                         originalBody
                     );
-        
+
                     if (messageId) {
-                        // Update the specific email's "sent" status and store the messageId
-                        await db.collection("email_sequences").updateOne(
-                            { _id: prospect._id, [`sequence.${emailKey}.sent`]: false },
-                            {
-                                $set: {
-                                    [`sequence.${emailKey}.sent`]: true,
-                                    ...(emailKey === "1_email" && { [`sequence.${emailKey}.messageId`]: messageId })
-                                },
-                            }
-                        );
-                        console.log(`Email ${emailKey} sent successfully to ${prospect.email}`);
+                        emailDetails.sent = true;
+                        if (emailKey === "1_email") {
+                            emailDetails.messageId = messageId; // Store `Message-ID` for the first email
+                        }
                     } else {
                         throw new Error(`Failed to send ${emailKey} to ${prospect.email}`);
                     }
-        
-                    // Delay between emails to prevent rate limits
-                    await delay(30000);
-        
                 } catch (error) {
                     console.error(`Error sending ${emailKey} for ${prospect.email}:`, error);
-        
+
                     // Log the error to the "status" collection
                     await db.collection("status").insertOne({
                         timestamp: new Date(),
@@ -263,8 +247,25 @@ cron.schedule("* * * * *", async () => {
                     });
                 }
             }
+
+            try {
+                // Update the database with the new `sent` statuses
+                await db.collection("email_sequences").updateOne(
+                    { _id: prospect._id },
+                    { $set: { sequence } }
+                );
+            } catch (error) {
+                console.error(`Error updating database for ${prospect.email}:`, error);
+
+                // Log the error to the "status" collection
+                await db.collection("status").insertOne({
+                    timestamp: new Date(),
+                    type: "database_update_error",
+                    prospectEmail: prospect.email,
+                    error: error.message,
+                });
+            }
         }
-        
     } catch (error) {
         console.error("Error in cron job:", error);
 
