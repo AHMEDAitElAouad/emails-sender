@@ -152,7 +152,7 @@ const transporter = nodemailer.createTransport({
 async function sendEmail(recipient, image, subject, body, inReplyTo = null, references = null, originalBody = null) {
     // Construct the reply body if it's a reply
     const replyBody = inReplyTo
-        ? `${body}<br/><br/><hr style="border:none;border-top:1px solid #ccc"/><p> --- On ${new Date().toLocaleString()}, Ahmed Ait el aouad <ahmed.ait.el.aouad@alcaotar.com> wrote ---<br/>${originalBody}</p>`
+        ? `${body}<br/><br/><hr style="border:none;border-top:1px solid #ccc"/><p> --- On ${new Date().toLocaleString()}, Ahmed Ait el aouad <ahmed.ait.el.aouad@alcaotar.com> wrote ---<br/>${originalBody}<br/><img src=${image}></p>`
         : `${body}<br/><img src=${image}>`;
 
     const mailOptions = {
