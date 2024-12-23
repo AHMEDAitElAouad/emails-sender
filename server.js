@@ -149,11 +149,11 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-async function sendEmail(recipient, subject, body, inReplyTo = null, references = null, originalBody = null) {
+async function sendEmail(recipient, image, subject, body, inReplyTo = null, references = null, originalBody = null) {
     // Construct the reply body if it's a reply
     const replyBody = inReplyTo
         ? `${body}<br/><br/><hr style="border:none;border-top:1px solid #ccc"/><p> --- On ${new Date().toLocaleString()}, Ahmed Ait el aouad <ahmed.ait.el.aouad@alcaotar.com> wrote ---<br/>${originalBody}</p>`
-        : body;
+        : `${body}<br/><img src=${image}>`;
 
     const mailOptions = {
         from: '"Ahmed Ait el aouad" <ahmed.ait.el.aouad@alcaotar.com>',
@@ -219,6 +219,7 @@ cron.schedule("* * * * *", async () => {
                     console.log(`Sending ${emailKey} to ${prospect.email}`);
                     const messageId = await sendEmail(
                         prospect.email,
+                        prospect.image_link,
                         emailDetails.subject,
                         emailDetails.body,
                         inReplyTo,
