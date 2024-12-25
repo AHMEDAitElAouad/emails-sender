@@ -121,6 +121,8 @@ const { MongoClient } = require("mongodb");
 const nodemailer = require("nodemailer");
 const cron = require("node-cron");
 require("dotenv").config();
+const fs = require('fs');
+
 
 const app = express();
 app.use(express.json());
@@ -279,6 +281,38 @@ cron.schedule("* * * * *", async () => {
     }
 });
 
+
+const TRACKING_LOG_FILE = 'tracking_logs.json';
+
+// Serve the 1x1 pixel image
+app.get('/track', (req, res) => {
+    const { email } = req.query;
+
+    // Log the email open event
+    const logEntry = {
+        email: email || 'unknown',
+        timestamp: new Date().toISOString(),
+    };
+    console.log('Tracking:', logEntry);
+
+    // Append log entry to a file
+    fs.appendFile(TRACKING_LOG_FILE, JSON.stringify(logEntry) + '\n', (err) => {
+        if (err) {
+            console.error('Failed to write log:', err);
+        }
+    });
+
+    // Send the transparent image
+    res.set('Content-Type', 'image/png');
+    res.send(Buffer.from([
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+        0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0xDA, 0x63, 0xF8, 0x0F, 0x00, 0x01,
+        0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0x57, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+    ]));
+});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
