@@ -71,107 +71,121 @@ cron.schedule("* * * * *", async () => {
   console.log(currentDay, currentHour);
 
   try {
-    const prospects = await db.collection("email_sequences").find().toArray();
+      const prospects = await db.collection("email_sequences").find().toArray();
 
-    // Group prospects by email address
-    const prospectsByEmail = prospects.reduce((acc, prospect) => {
-      const { email, sequence, my_email } = prospect;
-      acc[my_email] = acc[my_email] || { my_email, sequences: [] }; 
-      acc[my_email].sequences.push({ sequence, email }); 
-      return acc;
-    }, {});
+      // Group prospects by email address
+      const prospectsByEmail = prospects.reduce((acc, prospect) => {
+          const { email, sequence, my_email } = prospect;
+          acc[my_email] = acc[my_email] || { my_email, sequences: [] };
+          acc[my_email].sequences.push({ sequence, email }); 
+          return acc;
+      }, {});
+      console.log(prospectsByEmail)
+      console.log("0")
+      // Process emails for each my_email address
+      for (const { my_email, sequences } of Object.values(prospectsByEmail)) {
+          let emailsToSendThisHour = [];
 
-    // Process emails for each my_email address
-    for (const { my_email, sequences } of Object.values(prospectsByEmail)) {
-      let emailsToSendThisHour = [];
-
-      // Find emails scheduled for the current hour for this my_email
-      for (const { sequence, email } of sequences) {
-        const emails = Object.entries(sequence)
-          .filter(([key, emailData]) => {
-            if (!emailData.time || !emailData.time.day || !emailData.time.hour) {
-              console.warn(`Invalid time data for email ${key} in prospect ${email}`);
-              return false;
-            }
-            return (
-              emailData.time.day === currentDay &&
-              emailData.time.hour === currentHour &&
-              !emailData.sent
-            );
-          })
-          .sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
-
-        emailsToSendThisHour.push(...emails);
-      }
-
-      // Limit emails to MAX_EMAILS_PER_HOUR per my_email
-      if (emailsToSendThisHour.length > MAX_EMAILS_PER_HOUR) {
-        emailsToSendThisHour = emailsToSendThisHour.slice(0, MAX_EMAILS_PER_HOUR);
-
-        // Shift remaining emails to the next hour for this my_email
-        const nextHour = (parseInt(currentHour.split(":")[0]) + 1) % 24 + ":00";
-        for (let i = MAX_EMAILS_PER_HOUR; i < emailsToSendThisHour.length; i++) {
-          const [emailKey, emailData] = emailsToSendThisHour[i]; 
-          emailData.time.hour = nextHour;
+          // Find emails scheduled for the current hour for this my_email
+          for (const { sequence, email } of sequences) {
+            const emails = Object.entries(sequence)
+                .filter(([key, emailData]) => {
+                    if (!emailData.time || !emailData.time.day || !emailData.time.hour) {
+                        console.warn(`Invalid time data for email ${key} in prospect ${email}`);
+                        return false;
+                    }
+                    return (
+                        emailData.time.day === currentDay &&
+                        emailData.time.hour === currentHour &&
+                        !emailData.sent
+                    );
+                })
+                .map(([key, emailData]) => ({
+                    key,              // Include the sequence key
+                    emailData,        // Include the email data
+                    email,            // Include the email from the parent loop
+                }))
+                .sort((a, b) => a.key.localeCompare(b.key));
+        
+            emailsToSendThisHour.push(...emails);
         }
+        
+          console.log(sequences)
+          console.log("1")
+          console.log(emailsToSendThisHour);
+          console.log("2")
+
+          // Limit emails to MAX_EMAILS_PER_HOUR per my_email
+          if (emailsToSendThisHour.length > MAX_EMAILS_PER_HOUR) {
+              emailsToSendThisHour = emailsToSendThisHour.slice(0, MAX_EMAILS_PER_HOUR);
+              
+              // Shift remaining emails to the next hour for this my_email
+              const nextHour = (parseInt(currentHour.split(":")[0]) + 1) % 24 + ":00";
+              for (let i = MAX_EMAILS_PER_HOUR; i < emailsToSendThisHour.length; i++) {
+                  const [emailKey, emailData] = emailsToSendThisHour[i]; 
+                  emailData.time.hour = nextHour;
+              }
+          }
+
+          // Send emails with delay
+          for (const { key: emailKey, emailData, email } of emailsToSendThisHour) {
+            console.log("Processing email key:", emailKey, "Email data:", emailData);
+        
+            // Ensure emailData contains the required fields
+            if (!emailData || !email) {
+                console.warn(`Invalid email data for key ${emailKey}:`, emailData);
+                continue;
+            }
+        
+            // Find the prospect by email
+            const prospect = sequences.find(seq => seq.email === email);
+            if (!prospect) {
+                console.warn(`Prospect not found for email: ${email}`);
+                continue;
+            }
+        
+            // Send email logic
+            try {
+                const messageId = await sendEmail(
+                    email,                // Prospect email
+                    emailData.subject,    // Subject
+                    emailData.body,       // Body
+                    null,                 // Attachment (optional)
+                    null,                 // CC (optional)
+                    null,                 // BCC (optional)
+                    emailKey,             // Email key
+                    my_email              // Your email
+                );
+        
+                // Update database
+                await db.collection("email_sequences").updateOne(
+                    { email, [`sequence.${emailKey}`]: { $exists: true } },
+                    { $set: { [`sequence.${emailKey}.sent`]: true, [`sequence.${emailKey}.messageId`]: messageId } }
+                );
+            } catch (error) {
+                console.error(`Error sending email to ${email}:`, error);
+        
+                // Log the error to the "status" collection
+                await db.collection("status").insertOne({
+                    timestamp: new Date(),
+                    type: "database_update_error",
+                    prospectEmail: email,
+                    emailKey,
+                    error: error.message,
+                });
+            }
+        }
+        
       }
-
-      // Send emails with delay
-      // Send emails with delay
-for (const [emailKey, emailData] of emailsToSendThisHour) {
-  await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_EMAILS)); 
-
-  // `prospect` here likely refers to the `sequences` element
-  const prospect = sequences.find(seq => seq.email === emailData.email);
-
-  if (!prospect) {
-      console.warn(`Prospect not found for email ${emailData.email}`);
-      continue; // Skip if no matching prospect is found
-  }
-
-  // Send email with emailKey
-  const messageId = await sendEmail(
-      emailData.email,
-      prospect.image_link || "", // Adjust field as necessary
-      emailData.subject,
-      emailData.body, 
-      null,
-      null,
-      null,
-      emailKey,
-      my_email
-  ); 
-
-  // Update database logic for emailData
-  try {
-      await db.collection("email_sequences").updateOne(
-          { email: emailData.email, [`sequence.${emailKey}`]: { $exists: true } }, 
-          { $set: { [`sequence.${emailKey}.sent`]: true, [`sequence.${emailKey}.messageId`]: messageId } }
-      );
   } catch (error) {
-      console.error(`Error updating database for ${emailData.email}:`, error);
+      console.error("Error in cron job:", error);
 
-      // Log the error to the "status" collection
+      // Log the general cron job error to the "status" collection
       await db.collection("status").insertOne({
           timestamp: new Date(),
-          type: "database_update_error",
-          prospectEmail: emailData.email,
-          emailKey,
+          type: "cron_job_error",
           error: error.message,
       });
-  }
-}
-
-    }
-  } catch (error) {
-    console.error("Error in cron job:", error);
-
-    // Log the general cron job error to the "status" collection
-    await db.collection("status").insertOne({
-      timestamp: new Date(),
-      type: "cron_job_error",
-      error: error.message,
-    });
   }
 });
 
