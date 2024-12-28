@@ -33,8 +33,8 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-async function sendEmail(recipient, subject, body, inReplyTo = null, references = null, originalBody = null, emailKey, my_email) {
-  const trackingPixelUrl = `${process.env.APP_URL}/track?email=${recipient}&emailKey=${emailKey}`;
+async function sendEmail(recipient, subject, body, inReplyTo = null, references = null, originalBody = null, emailKey, my_email, id) {
+  const trackingPixelUrl = `${process.env.APP_URL}/track?email=${recipient}&emailKey=${emailKey}&id=${id}`;
   const replyBody = inReplyTo
       ? `${body}<br/><br/><hr style="border:none;border-top:1px solid #ccc"/><p> --- On ${new Date().toLocaleString()}, AHMED <${my_email}> wrote ---<br/>${originalBody}<br/></p><img src="${trackingPixelUrl}" style="display: none;">`
       : `${body}<br/><img src="${trackingPixelUrl}" style="display: none;">`;
@@ -58,6 +58,9 @@ async function sendEmail(recipient, subject, body, inReplyTo = null, references 
   }
 }
 
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 const MAX_EMAILS_PER_HOUR = 10;
 const DELAY_BETWEEN_EMAILS = 1000; // 90 seconds (in milliseconds)
@@ -85,7 +88,7 @@ cron.schedule("* * * * *", async () => {
           let emailsToSendThisHour = [];
 
           // Find emails scheduled for the current hour for this my_email
-          for (const { sequence, email } of sequences) {
+          for (const { sequence, email, _id } of sequences) {
             const emails = Object.entries(sequence)
                 .filter(([key, emailData]) => {
                     if (!emailData.time || !emailData.time.day || !emailData.time.hour) {
@@ -102,6 +105,7 @@ cron.schedule("* * * * *", async () => {
                     key,              // Include the sequence key
                     emailData,        // Include the email data
                     email,            // Include the email from the parent loop
+                    _id
                 }))
                 .sort((a, b) => a.key.localeCompare(b.key));
         
@@ -126,7 +130,7 @@ cron.schedule("* * * * *", async () => {
           }
 
           // Send emails with delay
-          for (const { key: emailKey, emailData, email } of emailsToSendThisHour) {
+          for (const { key: emailKey, emailData, email, _id } of emailsToSendThisHour) {
             console.log("Processing email key:", emailKey, "Email data:", emailData);
         
             // Ensure emailData contains the required fields
@@ -162,13 +166,14 @@ cron.schedule("* * * * *", async () => {
                   (emailKey === "1_email")? null :(firstEmailMessageId ? `<${firstEmailMessageId}>` : null), // Threading references
                   (emailKey === "1_email")? null : prospect.sequence[firstEmailKey]?.body, // Original body
                   emailKey,
-                  my_email
+                  my_email,
+                  _id
               );
               
         
                 // Update database
-                await db.collection("email_sequences").updateOne(
-                  { email },
+                await db.collection("email_sequences").updateMany(
+                  { _id },
                   { 
                       $set: { 
                           [`sequence.${emailKey}.sent`]: true, 
@@ -190,6 +195,7 @@ cron.schedule("* * * * *", async () => {
                     error: error.message,
                 });
             }
+            await delay(DELAY_BETWEEN_EMAILS); // 90 seconds in milliseconds
         }
         
       }
@@ -208,7 +214,7 @@ cron.schedule("* * * * *", async () => {
 
 const TRACKING_LOG_FILE = 'tracking_logs.json';
 
-async function updateEmailOpened(email, emailKey) {
+async function updateEmailOpened(email, emailKey, id) {
     try {
       const client = await MongoClient.connect(process.env.MONGO_URI);
       const db = client.db("contactsDB");
@@ -227,16 +233,17 @@ async function updateEmailOpened(email, emailKey) {
 
 // Serve the 1x1 pixel image
 app.get('/track', (req, res) => {
-    const { email, emailKey } = req.query;
+    const { email, emailKey, id } = req.query;
 
     // Log the email open event
     const logEntry = {
         email: email || 'unknown',
         emailKey: emailKey || 'unknown',
+        id: id || 'unknown',
         timestamp: new Date().toISOString(),
     };
     console.log('Tracking:', logEntry);
-    updateEmailOpened(email, emailKey);
+    updateEmailOpened(email, emailKey, id);
     // Append log entry to a file
     fs.appendFile(TRACKING_LOG_FILE, JSON.stringify(logEntry) + '\n', (err) => {
         if (err) {
