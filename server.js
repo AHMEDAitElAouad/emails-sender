@@ -105,7 +105,7 @@ cron.schedule("* * * * *", async () => {
   const now = new Date();
   const currentDay = now.toLocaleString("en-US", { weekday: "long" });
   const currentHour = `${now.getHours().toString().padStart(2, "0")}:00`;
-
+  console.log(currentDay, currentHour)
   try {
     const prospects = await db.collection("email_sequences").find().toArray();
 
