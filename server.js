@@ -117,32 +117,51 @@ cron.schedule("* * * * *", async () => {
       }
 
       // Send emails with delay
-      for (const [emailKey, emailData] of emailsToSendThisHour) {
-        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_EMAILS)); 
+      // Send emails with delay
+for (const [emailKey, emailData] of emailsToSendThisHour) {
+  await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_EMAILS)); 
 
-        // Send email with emailKey
-        const messageId = await sendEmail(emailData.email, prospect.image_link, emailData.subject, emailData.body, 
-                      null, null, null, emailKey, my_email); 
+  // `prospect` here likely refers to the `sequences` element
+  const prospect = sequences.find(seq => seq.email === emailData.email);
 
-        // Update database logic for emailData
-        try {
-          await db.collection("email_sequences").updateOne(
-            { "email": emailData.email, "sequence": { $elemMatch: { key: emailKey } } }, 
-            { $set: { [`sequence.$.sent`]: true, [`sequence.$.messageId`]: messageId } } 
-          );
-        } catch (error) {
-          console.error(`Error updating database for ${emailData.email}:`, error);
+  if (!prospect) {
+      console.warn(`Prospect not found for email ${emailData.email}`);
+      continue; // Skip if no matching prospect is found
+  }
 
-          // Log the error to the "status" collection
-          await db.collection("status").insertOne({
-            timestamp: new Date(),
-            type: "database_update_error",
-            prospectEmail: emailData.email,
-            emailKey,
-            error: error.message,
-          });
-        }
-      }
+  // Send email with emailKey
+  const messageId = await sendEmail(
+      emailData.email,
+      prospect.image_link || "", // Adjust field as necessary
+      emailData.subject,
+      emailData.body, 
+      null,
+      null,
+      null,
+      emailKey,
+      my_email
+  ); 
+
+  // Update database logic for emailData
+  try {
+      await db.collection("email_sequences").updateOne(
+          { email: emailData.email, [`sequence.${emailKey}`]: { $exists: true } }, 
+          { $set: { [`sequence.${emailKey}.sent`]: true, [`sequence.${emailKey}.messageId`]: messageId } }
+      );
+  } catch (error) {
+      console.error(`Error updating database for ${emailData.email}:`, error);
+
+      // Log the error to the "status" collection
+      await db.collection("status").insertOne({
+          timestamp: new Date(),
+          type: "database_update_error",
+          prospectEmail: emailData.email,
+          emailKey,
+          error: error.message,
+      });
+  }
+}
+
     }
   } catch (error) {
     console.error("Error in cron job:", error);
