@@ -76,9 +76,9 @@ cron.schedule("* * * * *", async () => {
 
       // Group prospects by email address
       const prospectsByEmail = prospects.reduce((acc, prospect) => {
-          const { email, sequence, my_email } = prospect;
+          const { email, sequence, my_email, _id } = prospect;
           acc[my_email] = acc[my_email] || { my_email, sequences: [] };
-          acc[my_email].sequences.push({ sequence, email }); 
+          acc[my_email].sequences.push({ sequence, email, _id }); 
           return acc;
       }, {});
       //console.log(prospectsByEmail)
@@ -86,7 +86,7 @@ cron.schedule("* * * * *", async () => {
       // Process emails for each my_email address
       for (const { my_email, sequences } of Object.values(prospectsByEmail)) {
           let emailsToSendThisHour = [];
-
+        console.log(sequences)
           // Find emails scheduled for the current hour for this my_email
           for (const { sequence, email, _id } of sequences) {
             const emails = Object.entries(sequence)
@@ -114,7 +114,7 @@ cron.schedule("* * * * *", async () => {
         
           //console.log(sequences)
           console.log("1")
-          console.log(emailsToSendThisHour);
+          //console.log(emailsToSendThisHour);
           console.log("2")
 
           // Limit emails to MAX_EMAILS_PER_HOUR per my_email
@@ -132,6 +132,7 @@ cron.schedule("* * * * *", async () => {
           // Send emails with delay
           for (const { key: emailKey, emailData, email, _id } of emailsToSendThisHour) {
             console.log("Processing email key:", emailKey, "Email data:", emailData);
+            console.log(_id)
         
             // Ensure emailData contains the required fields
             if (!emailData || !email) {
