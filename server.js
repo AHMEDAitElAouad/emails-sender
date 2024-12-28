@@ -34,32 +34,30 @@ const transporter = nodemailer.createTransport({
 });
 
 async function sendEmail(recipient, subject, body, inReplyTo = null, references = null, originalBody = null, emailKey, my_email) {
-    // Construct the reply body if it's a reply
-    const trackingPixelUrl = `${process.env.APP_URL}/track?email=${recipient}&emailKey=${emailKey}`;
-    const replyBody = inReplyTo
-        ? `${body}<br/><br/><hr style="border:none;border-top:1px solid #ccc"/><p> --- On ${new Date().toLocaleString()}, AHMED <${my_email}> wrote ---<br/>${originalBody}<br/></p><img src="${trackingPixelUrl}" style="display: none;">`
-        : `${body}<br/><img src="${trackingPixelUrl}" style="display: none;">`;
+  const trackingPixelUrl = `${process.env.APP_URL}/track?email=${recipient}&emailKey=${emailKey}`;
+  const replyBody = inReplyTo
+      ? `${body}<br/><br/><hr style="border:none;border-top:1px solid #ccc"/><p> --- On ${new Date().toLocaleString()}, AHMED <${my_email}> wrote ---<br/>${originalBody}<br/></p><img src="${trackingPixelUrl}" style="display: none;">`
+      : `${body}<br/><img src="${trackingPixelUrl}" style="display: none;">`;
 
-    const mailOptions = {
-        from: `"AHMED" <${my_email}>`,
-        to: recipient,
-        subject: inReplyTo ? `Re: ${subject}` : subject,
-        html: replyBody,
-    };
-
-      // Add threading headers if this is a reply
-  if (inReplyTo) mailOptions.inReplyTo = inReplyTo;
-  if (references) mailOptions.references = references;
+  const mailOptions = {
+      from: `"AHMED" <${my_email}>`,
+      to: recipient,
+      subject: inReplyTo ? `Re: ${subject}` : subject,
+      html: replyBody,
+      inReplyTo, // Ensure inReplyTo is set
+      references, // Ensure references is set
+  };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${recipient}: ${info.messageId}`);
-    return info.messageId; // Return `Message-ID` for threading
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`Email sent to ${recipient}: ${info.messageId}`);
+      return info.messageId;
   } catch (error) {
-    console.error("Error sending email:", error);
-    return null; // Return null if failed
+      console.error("Error sending email:", error);
+      return null;
   }
 }
+
 
 const MAX_EMAILS_PER_HOUR = 10;
 const DELAY_BETWEEN_EMAILS = 1000; // 90 seconds (in milliseconds)
@@ -80,8 +78,8 @@ cron.schedule("* * * * *", async () => {
           acc[my_email].sequences.push({ sequence, email }); 
           return acc;
       }, {});
-      console.log(prospectsByEmail)
-      console.log("0")
+      //console.log(prospectsByEmail)
+      //console.log("0")
       // Process emails for each my_email address
       for (const { my_email, sequences } of Object.values(prospectsByEmail)) {
           let emailsToSendThisHour = [];
@@ -110,7 +108,7 @@ cron.schedule("* * * * *", async () => {
             emailsToSendThisHour.push(...emails);
         }
         
-          console.log(sequences)
+          //console.log(sequences)
           console.log("1")
           console.log(emailsToSendThisHour);
           console.log("2")
@@ -143,25 +141,43 @@ cron.schedule("* * * * *", async () => {
                 console.warn(`Prospect not found for email: ${email}`);
                 continue;
             }
+
+            const prevEmailKey = `sequence.${parseInt(emailKey) - 1}_email`;
+    if (emailKey !== "1_email" && (!prospect.sequence[prevEmailKey]?.sent)) {
+        console.warn(`Previous email not sent for ${emailKey}. Skipping ${email}.`);
+        continue;
+    }
         
             // Send email logic
             try {
-                const messageId = await sendEmail(
-                    email,                // Prospect email
-                    emailData.subject,    // Subject
-                    emailData.body,       // Body
-                    null,                 // Attachment (optional)
-                    null,                 // CC (optional)
-                    null,                 // BCC (optional)
-                    emailKey,             // Email key
-                    my_email              // Your email
-                );
+              const firstEmailKey = "1_email"; // Adjust this as per your sequence key for the first email
+              const firstEmailMessageId = prospect.sequence[firstEmailKey]?.messageId;
+              console.log(firstEmailMessageId)
+              console.log(prospect.sequence[firstEmailKey]?.body)
+              const messageId = await sendEmail(
+                  email,
+                  emailData.subject,
+                  emailData.body,
+                  firstEmailMessageId, // Reference the 1_email
+                  firstEmailMessageId ? `<${firstEmailMessageId}>` : null, // Threading references
+                  prospect.sequence[firstEmailKey]?.body, // Original body
+                  emailKey,
+                  my_email
+              );
+              
         
                 // Update database
                 await db.collection("email_sequences").updateOne(
-                    { email, [`sequence.${emailKey}`]: { $exists: true } },
-                    { $set: { [`sequence.${emailKey}.sent`]: true, [`sequence.${emailKey}.messageId`]: messageId } }
-                );
+                  { email },
+                  { 
+                      $set: { 
+                          [`sequence.${emailKey}.sent`]: true, 
+                          [`sequence.${emailKey}.messageId`]: messageId,
+                          [`sequence.${emailKey}.sentAt`]: new Date() // Save the sent time
+                      } 
+                  }
+              );
+              
             } catch (error) {
                 console.error(`Error sending email to ${email}:`, error);
         
