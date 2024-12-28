@@ -158,9 +158,9 @@ cron.schedule("* * * * *", async () => {
                   email,
                   emailData.subject,
                   emailData.body,
-                  firstEmailMessageId, // Reference the 1_email
-                  firstEmailMessageId ? `<${firstEmailMessageId}>` : null, // Threading references
-                  prospect.sequence[firstEmailKey]?.body, // Original body
+                  (emailKey === "1_email")? null :firstEmailMessageId, // Reference the 1_email
+                  (emailKey === "1_email")? null :(firstEmailMessageId ? `<${firstEmailMessageId}>` : null), // Threading references
+                  (emailKey === "1_email")? null : prospect.sequence[firstEmailKey]?.body, // Original body
                   emailKey,
                   my_email
               );
