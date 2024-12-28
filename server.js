@@ -62,9 +62,9 @@ async function sendEmail(recipient, subject, body, inReplyTo = null, references 
 }
 
 const MAX_EMAILS_PER_HOUR = 10;
-const DELAY_BETWEEN_EMAILS = 90000; // 90 seconds (in milliseconds)
+const DELAY_BETWEEN_EMAILS = 1000; // 90 seconds (in milliseconds)
 
-cron.schedule("0 * * * *", async () => {
+cron.schedule("* * * * *", async () => {
   const now = new Date();
   const currentDay = now.toLocaleString("en-US", { weekday: "long" });
   const currentHour = now.toTimeString().split(":")[0] + ":00";
