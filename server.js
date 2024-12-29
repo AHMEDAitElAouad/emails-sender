@@ -23,17 +23,29 @@ async function connectToDb() {
     }
 }
 
-const transporter = nodemailer.createTransport({
-    host: "smtp.zoho.com",
-    port: 465,
-    secure: true, // use SSL
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-    },
-});
 
 async function sendEmail(recipient, subject, body, inReplyTo = null, references = null, originalBody = null, emailKey, my_email, id) {
+    let transporter;
+    if(my_email=== "ahmed@alcaotar.com" || my_email=== "ahmed.ait.el.aouad@alcaotar.com" || my_email=== "ahmed.aitelaouad@alcaotar.com" ){
+    transporter = nodemailer.createTransport({
+        host: "smtp.zoho.com",
+        port: 465,
+        secure: true, // use SSL
+        auth: {
+            user: process.env.EMAIL_USER1,
+            pass: process.env.EMAIL_PASS1,
+        },
+    });} else if(my_email=== "ahmed@alcaotar.agency" || my_email=== "ahmed.ait.el.aouad@alcaotar.agency" || my_email=== "ahmed.aitelaouad@alcaotar.agency"){
+        transporter = nodemailer.createTransport({
+            host: "smtp.zoho.com",
+            port: 465,
+            secure: true, // use SSL
+            auth: {
+                user: process.env.EMAIL_USER2,
+                pass: process.env.EMAIL_PASS2,
+            },
+        });
+    }
   const trackingPixelUrl = `${process.env.APP_URL}/track?email=${recipient}&emailKey=${emailKey}&id=${id}`;
   const replyBody = inReplyTo
       ? `${body}<br/><br/><hr style="border:none;border-top:1px solid #ccc"/><p> --- On ${new Date().toLocaleString()}, AHMED <${my_email}> wrote ---<br/>${originalBody}<br/></p><img src="${trackingPixelUrl}" style="display: none;">`
