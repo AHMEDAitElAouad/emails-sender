@@ -50,6 +50,16 @@ async function sendEmail(recipient, subject, body, inReplyTo = null, references 
 
   try {
       const info = await transporter.sendMail(mailOptions);
+      await db.collection("email_sequences").updateOne(
+        { "_id": id },
+        { 
+            $set: { 
+                [`sequence.${emailKey}.sent`]: true, 
+                [`sequence.${emailKey}.messageId`]: info.messageId,
+                [`sequence.${emailKey}.sentAt`]: new Date() // Save the sent time
+            } 
+        }
+    );
       console.log(`Email sent to ${recipient}: ${info.messageId}`);
       return info.messageId;
   } catch (error) {
@@ -63,7 +73,7 @@ function delay(ms) {
 }
 
 const MAX_EMAILS_PER_HOUR = 10;
-const DELAY_BETWEEN_EMAILS = 1000; // 90 seconds (in milliseconds)
+const DELAY_BETWEEN_EMAILS = 90000; // 90 seconds (in milliseconds)
 
 cron.schedule("* * * * *", async () => {
   const now = new Date();
@@ -114,13 +124,17 @@ cron.schedule("* * * * *", async () => {
 
           // Limit emails to MAX_EMAILS_PER_HOUR per my_email
           if (emailsToSendThisHour.length > MAX_EMAILS_PER_HOUR) {
+              const allEmails = emailsToSendThisHour;
               emailsToSendThisHour = emailsToSendThisHour.slice(0, MAX_EMAILS_PER_HOUR);
-              
               // Shift remaining emails to the next hour for this my_email
               const nextHour = (parseInt(currentHour.split(":")[0]) + 1) % 24 + ":00";
-              for (let i = MAX_EMAILS_PER_HOUR; i < emailsToSendThisHour.length; i++) {
-                  const [emailKey, emailData] = emailsToSendThisHour[i]; 
-                  emailData.time.hour = nextHour;
+              
+              for (let i = MAX_EMAILS_PER_HOUR; i < allEmails.length; i++) {
+                
+                  await db.collection("email_sequences").updateOne(
+                    { "_id": allEmails[i]._id },  // Filter to find the correct email
+                    { $set: { [`sequence.${allEmails[i].key}.time.hour`]: nextHour } } // Update the hour field
+                );
               }
           }
 
@@ -165,16 +179,7 @@ cron.schedule("* * * * *", async () => {
               
         
                 // Update database
-                await db.collection("email_sequences").updateMany(
-                  { _id },
-                  { 
-                      $set: { 
-                          [`sequence.${emailKey}.sent`]: true, 
-                          [`sequence.${emailKey}.messageId`]: messageId,
-                          [`sequence.${emailKey}.sentAt`]: new Date() // Save the sent time
-                      } 
-                  }
-              );
+                
               
             } catch (error) {
                 console.error(`Error sending email to ${email}:`, error);
@@ -213,7 +218,7 @@ async function updateEmailOpened(email, emailKey, id) {
       const db = client.db("contactsDB");
   
       const result = await db.collection("email_sequences").updateOne(
-        { "email": email },
+        { "_id": id },
         { $set: { [`sequence.${emailKey}.opened`]: true } } // Use dynamic key based on emailKey
       );
   
