@@ -78,7 +78,7 @@ function delay(ms) {
 const MAX_EMAILS_PER_HOUR = 10;
 const DELAY_BETWEEN_EMAILS = 90000; // 90 seconds (in milliseconds)
 
-cron.schedule("* * * * *", async () => {
+cron.schedule("0 * * * *", async () => {
   const now = new Date();
   const currentDay = now.toLocaleString("en-US", { weekday: "long" });
   const currentHour = now.toTimeString().split(":")[0] + ":00";
