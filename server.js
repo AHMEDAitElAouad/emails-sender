@@ -62,16 +62,7 @@ async function sendEmail(recipient, subject, body, inReplyTo = null, references 
 
   try {
       const info = await transporter.sendMail(mailOptions);
-      await db.collection("email_sequences").updateOne(
-        { "_id": id },
-        { 
-            $set: { 
-                [`sequence.${emailKey}.sent`]: true, 
-                [`sequence.${emailKey}.messageId`]: info.messageId,
-                [`sequence.${emailKey}.sentAt`]: new Date() // Save the sent time
-            } 
-        }
-    );
+      
       console.log(`Email sent to ${recipient}: ${info.messageId}`);
       return info.messageId;
   } catch (error) {
@@ -191,7 +182,16 @@ cron.schedule("* * * * *", async () => {
               
         
                 // Update database
-                
+                await db.collection("email_sequences").updateOne(
+                    { "_id": _id },
+                    { 
+                        $set: { 
+                            [`sequence.${emailKey}.sent`]: true, 
+                            [`sequence.${emailKey}.messageId`]: messageId,
+                            [`sequence.${emailKey}.sentAt`]: new Date() // Save the sent time
+                        } 
+                    }
+                );
               
             } catch (error) {
                 console.error(`Error sending email to ${email}:`, error);
